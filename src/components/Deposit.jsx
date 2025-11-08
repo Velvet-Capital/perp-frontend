@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useWallet } from '../hooks/useWallet';
 import { getTokenBalance } from '../utils/token-balance';
-import { depositWithApproval, getAllowance } from '../utils/deposit';
+import { depositUSDC } from '../utils/deposit';
 import { ArrowUpCircle, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
 
 const Deposit = () => {
@@ -14,35 +14,6 @@ const Deposit = () => {
     const [successMessage, setSuccessMessage] = useState('');
     const [tokenBalance, setTokenBalance] = useState(null);
     const [loadingBalance, setLoadingBalance] = useState(false);
-    const [allowance, setAllowance] = useState(null);
-    const [loadingAllowance, setLoadingAllowance] = useState(false);
-    const [step, setStep] = useState(null); // 'approving' or 'depositing'
-
-    // Fetch allowance for bridge
-    const fetchAllowance = async () => {
-        if (!account || !signer || !chainId) {
-            setAllowance(null);
-            return;
-        }
-
-        // Only fetch if on Arbitrum network
-        const isArbitrum = chainId === '42161' || chainId === 42161 || chainId === '421614' || chainId === 421614;
-        if (!isArbitrum) {
-            setAllowance(null);
-            return;
-        }
-
-        setLoadingAllowance(true);
-        try {
-            const currentAllowance = await getAllowance(signer, token);
-            setAllowance(currentAllowance);
-        } catch (err) {
-            console.error('Error fetching allowance:', err);
-            setAllowance('0');
-        } finally {
-            setLoadingAllowance(false);
-        }
-    };
 
     // Fetch token balance on Arbitrum
     const fetchTokenBalance = async () => {
@@ -70,14 +41,12 @@ const Deposit = () => {
         }
     };
 
-    // Fetch balance and allowance when account, provider, chainId, or token changes
+    // Fetch balance when account, provider, chainId, or token changes
     useEffect(() => {
         fetchTokenBalance();
-        fetchAllowance();
         if (account && provider && chainId) {
             const interval = setInterval(() => {
                 fetchTokenBalance();
-                fetchAllowance();
             }, 10000); // Refresh every 10 seconds
             return () => clearInterval(interval);
         }
@@ -112,36 +81,21 @@ const Deposit = () => {
         setLoading(true);
         setError(null);
         setSuccess(false);
-        setStep(null);
+        setSuccessMessage('Depositing to Hyperliquid...');
 
         try {
-            // Check if approval is needed
-            const currentAllowance = allowance || await getAllowance(signer, token);
-            const { ethers } = await import('ethers');
-            const amountInUnits = ethers.parseUnits(amount.toString(), 6); // USDC/USDT have 6 decimals
-
-            if (BigInt(currentAllowance) < BigInt(amountInUnits.toString())) {
-                setStep('approving');
-                setSuccessMessage('Step 1/2: Approving token for bridge...');
-            } else {
-                setStep('depositing');
-                setSuccessMessage('Depositing to Hyperliquid...');
-            }
-
-            // Deposit with automatic approval if needed
-            const result = await depositWithApproval(signer, parseFloat(amount), token);
+            // Direct deposit without approval (simple transfer)
+            const result = await depositUSDC(signer, parseFloat(amount), token);
 
             if (result.status === 'ok') {
                 const txHash = result.response?.txHash;
                 setSuccessMessage(`Successfully deposited ${amount} ${token}!`);
                 setSuccess(true);
                 setAmount('');
-                setStep(null);
 
-                // Refresh balances after delays
+                // Refresh balance after delay
                 setTimeout(() => {
                     fetchTokenBalance();
-                    fetchAllowance();
                 }, 2000);
 
                 // Show success message with transaction hash
@@ -152,7 +106,6 @@ const Deposit = () => {
         } catch (err) {
             setError(err.message || 'Failed to process deposit');
             console.error('Deposit error:', err);
-            setStep(null);
         } finally {
             setLoading(false);
             setTimeout(() => {
@@ -259,14 +212,14 @@ const Deposit = () => {
                     </div>
                 )}
 
-                {step && (
+                {loading && successMessage && (
                     <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2 text-blue-600">
                         <RefreshCw className="w-5 h-5 animate-spin" />
-                        <span className="text-sm">{successMessage || (step === 'approving' ? 'Approving token...' : 'Depositing...')}</span>
+                        <span className="text-sm">{successMessage}</span>
                     </div>
                 )}
 
-                {success && successMessage && !step && (
+                {success && successMessage && (
                     <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-600">
                         <CheckCircle className="w-5 h-5" />
                         <span className="text-sm">{successMessage}</span>
